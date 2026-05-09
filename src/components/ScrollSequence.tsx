@@ -18,43 +18,42 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isReady, setIsReady] = useState(false);
-  const [opacity, setOpacity] = useState(1);
   
   const stateRef = useRef({ 
     frame: 0,
     idle: 0 
   });
 
-  // Background Preloader for all flavors
+  // Background Preloader
   useEffect(() => {
     const preloadAll = async () => {
       for (const f of flavorsList) {
         if (flavorCache[f]) continue;
         
         const images: HTMLImageElement[] = [];
-        let loadedCount = 0;
-        
         const loadPromises = Array.from({ length: frameCount }).map((_, i) => {
           return new Promise((resolve) => {
             const img = new Image();
             const frameNumber = (i + 1).toString().padStart(3, "0");
             img.src = `/images/${f}/ezgif-frame-${frameNumber}.jpg`;
             img.onload = () => {
-              loadedCount++;
               images[i] = img;
               resolve(img);
             };
-            img.onerror = resolve; // Skip failed images
+            img.onerror = resolve;
           });
         });
 
-        // Load the first 10 frames of each flavor with high priority
-        await Promise.all(loadPromises.slice(0, 10));
+        // Load current flavor high priority
+        if (f === flavor) {
+          await Promise.all(loadPromises.slice(0, 20));
+          flavorCache[f] = images;
+          setIsReady(true);
+        }
         
-        // Then load the rest in the background
+        // Load the rest
         Promise.all(loadPromises).then(() => {
           flavorCache[f] = images;
-          if (f === flavor) setIsReady(true);
         });
       }
     };
@@ -62,10 +61,9 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     preloadAll();
   }, [frameCount, flavor]);
 
-  // Handle Flavor Switch Transition
+  // Handle Switch
   useEffect(() => {
     if (flavorCache[flavor]) {
-      // If cached, fade out, switch, then fade in
       gsap.to(canvasRef.current, {
         opacity: 0,
         duration: 0.3,
@@ -85,7 +83,11 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     if (!isReady || !canvasRef.current || !flavorCache[flavor]) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: false });
+    // Use alpha: false for better performance and clarity
+    const ctx = canvas.getContext("2d", { 
+      alpha: false,
+      desynchronized: true // Low latency rendering
+    });
     if (!ctx) return;
 
     const render = () => {
@@ -94,7 +96,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       const images = flavorCache[flavor];
       const img = images ? images[safeFrame] : null;
 
-      if (img) {
+      if (img && canvas) {
+        // MAXIMUM QUALITY SETTINGS
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         
@@ -106,7 +109,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       }
     };
 
-    // 1. AUTO-PLAY INTRO ANIMATION
     const introAnimation = gsap.to(stateRef.current, {
       frame: frameCount - 1,
       duration: 3,
@@ -114,7 +116,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       onUpdate: render,
     });
 
-    // 2. Idle "Breathing" Animation
     const idleAnimation = gsap.to(stateRef.current, {
       idle: 0.8,
       duration: 2.5,
@@ -125,6 +126,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     });
 
     const handleResize = () => {
+      // Use full DPR for maximum sharpness
       const dpr = window.devicePixelRatio || 1;
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
@@ -146,14 +148,20 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height: "100%", objectFit: "cover", opacity: isReady ? 1 : 0 }}
+        style={{ 
+          width: "100%", 
+          height: "100%", 
+          objectFit: "cover", 
+          opacity: isReady ? 1 : 0,
+          imageRendering: "auto", // Better for photos than 'pixelated'
+          filter: "contrast(1.05) brightness(1.02)", // Subtle pop for "HDR" feel
+        }}
         className="will-change-transform transition-opacity duration-500"
       />
       
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,black_100%)] opacity-80" />
-        
         <div className="absolute top-1/4 left-1/4 w-[40vw] h-[40vw] bg-orange-500/5 rounded-full blur-[100px]" />
         <div className="absolute bottom-1/4 right-1/4 w-[30vw] h-[30vw] bg-orange-400/5 rounded-full blur-[80px]" />
       </div>
