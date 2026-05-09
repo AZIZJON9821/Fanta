@@ -6,13 +6,11 @@ import gsap from "gsap";
 interface ScrollSequenceProps {
   flavor: string;
   frameCount: number;
-  containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   flavor,
   frameCount,
-  containerRef,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isReady, setIsReady] = useState(false);
@@ -24,8 +22,13 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     idle: 0 
   });
 
-  // Preload images
+  // Preload images - Triggers on flavor change
   useEffect(() => {
+    setIsReady(false);
+    setLoadingProgress(0);
+    imagesRef.current = [];
+    stateRef.current.frame = 0;
+
     let loadedCount = 0;
     const images: HTMLImageElement[] = [];
 
@@ -79,10 +82,9 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     // 1. AUTO-PLAY INTRO ANIMATION
     const introAnimation = gsap.to(stateRef.current, {
       frame: frameCount - 1,
-      duration: 3.5,
+      duration: 3,
       ease: "power2.inOut",
       onUpdate: render,
-      delay: 0.5
     });
 
     // 2. Idle "Breathing" Animation
@@ -111,7 +113,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       idleAnimation.kill();
       window.removeEventListener("resize", handleResize);
     };
-  }, [isReady, frameCount]);
+  }, [isReady, flavor, frameCount]);
 
   return (
     <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
