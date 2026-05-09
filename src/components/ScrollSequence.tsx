@@ -8,51 +8,81 @@ interface ScrollSequenceProps {
   frameCount: number;
 }
 
+// Global cache to store preloaded images for all flavors
+const flavorCache: Record<string, HTMLImageElement[]> = {};
+const flavorsList = ["Apelsin", "Marakuya", "Qulupnay", "Chernika&Malina", "SiyohrangCHernika"];
+
 export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   flavor,
   frameCount,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isReady, setIsReady] = useState(false);
+  const [opacity, setOpacity] = useState(1);
   
-  const imagesRef = useRef<HTMLImageElement[]>([]);
   const stateRef = useRef({ 
     frame: 0,
     idle: 0 
   });
 
-  // Preload images - Triggers on flavor change
+  // Background Preloader for all flavors
   useEffect(() => {
-    setIsReady(false);
-    imagesRef.current = [];
-    stateRef.current.frame = 0;
-
-    let loadedCount = 0;
-    const images: HTMLImageElement[] = [];
-
-    const loadImages = () => {
-      for (let i = 0; i < frameCount; i++) {
-        const img = new Image();
-        const frameNumber = (i + 1).toString().padStart(3, "0");
-        img.src = `/images/${flavor}/ezgif-frame-${frameNumber}.jpg`;
+    const preloadAll = async () => {
+      for (const f of flavorsList) {
+        if (flavorCache[f]) continue;
         
-        img.onload = () => {
-          loadedCount++;
-          images[i] = img;
-          if (loadedCount === frameCount) {
-            imagesRef.current = images;
-            setIsReady(true);
-          }
-        };
+        const images: HTMLImageElement[] = [];
+        let loadedCount = 0;
+        
+        const loadPromises = Array.from({ length: frameCount }).map((_, i) => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            const frameNumber = (i + 1).toString().padStart(3, "0");
+            img.src = `/images/${f}/ezgif-frame-${frameNumber}.jpg`;
+            img.onload = () => {
+              loadedCount++;
+              images[i] = img;
+              resolve(img);
+            };
+            img.onerror = resolve; // Skip failed images
+          });
+        });
+
+        // Load the first 10 frames of each flavor with high priority
+        await Promise.all(loadPromises.slice(0, 10));
+        
+        // Then load the rest in the background
+        Promise.all(loadPromises).then(() => {
+          flavorCache[f] = images;
+          if (f === flavor) setIsReady(true);
+        });
       }
     };
 
-    loadImages();
-  }, [flavor, frameCount]);
+    preloadAll();
+  }, [frameCount, flavor]);
+
+  // Handle Flavor Switch Transition
+  useEffect(() => {
+    if (flavorCache[flavor]) {
+      // If cached, fade out, switch, then fade in
+      gsap.to(canvasRef.current, {
+        opacity: 0,
+        duration: 0.3,
+        onComplete: () => {
+          stateRef.current.frame = 0;
+          setIsReady(true);
+          gsap.to(canvasRef.current, { opacity: 1, duration: 0.5 });
+        }
+      });
+    } else {
+      setIsReady(false);
+    }
+  }, [flavor]);
 
   // Animation Logic
   useEffect(() => {
-    if (!isReady || !canvasRef.current) return;
+    if (!isReady || !canvasRef.current || !flavorCache[flavor]) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: false });
@@ -61,7 +91,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     const render = () => {
       const currentFrame = Math.round(stateRef.current.frame + stateRef.current.idle);
       const safeFrame = Math.max(0, Math.min(frameCount - 1, currentFrame));
-      const img = imagesRef.current[safeFrame];
+      const images = flavorCache[flavor];
+      const img = images ? images[safeFrame] : null;
 
       if (img) {
         ctx.imageSmoothingEnabled = true;
@@ -115,8 +146,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        className="will-change-transform"
+        style={{ width: "100%", height: "100%", objectFit: "cover", opacity: isReady ? 1 : 0 }}
+        className="will-change-transform transition-opacity duration-500"
       />
       
       <div className="absolute inset-0 pointer-events-none">
