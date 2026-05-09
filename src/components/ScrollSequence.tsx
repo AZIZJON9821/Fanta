@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 interface ScrollSequenceProps {
   flavor: string;
@@ -19,14 +18,13 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   const [isReady, setIsReady] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   
-  // Refs for animation state
   const imagesRef = useRef<HTMLImageElement[]>([]);
   const stateRef = useRef({ 
     frame: 0,
     idle: 0 
   });
 
-  // Preload images with high priority
+  // Preload images
   useEffect(() => {
     let loadedCount = 0;
     const images: HTMLImageElement[] = [];
@@ -53,18 +51,15 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     loadImages();
   }, [flavor, frameCount]);
 
-  // Animation & Scroll Logic
+  // Animation Logic
   useEffect(() => {
-    if (!isReady || !canvasRef.current || !containerRef.current) return;
+    if (!isReady || !canvasRef.current) return;
 
-    gsap.registerPlugin(ScrollTrigger);
-    
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
 
     const render = () => {
-      // Calculate current frame (scroll frame + idle oscillation)
       const currentFrame = Math.round(stateRef.current.frame + stateRef.current.idle);
       const safeFrame = Math.max(0, Math.min(frameCount - 1, currentFrame));
       const img = imagesRef.current[safeFrame];
@@ -81,22 +76,18 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       }
     };
 
-    // 1. Scroll Scrubbing Animation
-    const scrollAnimation = gsap.to(stateRef.current, {
+    // 1. AUTO-PLAY INTRO ANIMATION
+    const introAnimation = gsap.to(stateRef.current, {
       frame: frameCount - 1,
-      ease: "none",
-      scrollTrigger: {
-        trigger: containerRef.current,
-        start: "top top",
-        end: "bottom bottom",
-        scrub: 1.5, // Ultra-smooth scrubbing with 1.5s lag
-        onUpdate: render,
-      },
+      duration: 3.5,
+      ease: "power2.inOut",
+      onUpdate: render,
+      delay: 0.5
     });
 
-    // 2. Idle "Breathing" Animation (Separate property to avoid conflicts)
+    // 2. Idle "Breathing" Animation
     const idleAnimation = gsap.to(stateRef.current, {
-      idle: 0.8, // subtle 0.8 frame move
+      idle: 0.8,
       duration: 2.5,
       repeat: -1,
       yoyo: true,
@@ -104,7 +95,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       onUpdate: render,
     });
 
-    // 3. Handle Canvas Resize
     const handleResize = () => {
       const dpr = window.devicePixelRatio || 1;
       canvas.width = window.innerWidth * dpr;
@@ -114,17 +104,14 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
     window.addEventListener("resize", handleResize);
     handleResize();
-
-    // Initial render
     render();
 
     return () => {
-      scrollAnimation.kill();
+      introAnimation.kill();
       idleAnimation.kill();
-      ScrollTrigger.getAll().forEach(st => st.kill());
       window.removeEventListener("resize", handleResize);
     };
-  }, [isReady, frameCount, containerRef]);
+  }, [isReady, frameCount]);
 
   return (
     <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
@@ -134,7 +121,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         className="will-change-transform"
       />
       
-      {/* Cinematic Loader */}
       {!isReady && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-50">
           <div className="mb-6 text-orange-500 text-[10px] font-black tracking-[0.8em] uppercase opacity-50">
@@ -152,17 +138,14 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         </div>
       )}
       
-      {/* Cinematic Lighting Overlays */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,black_100%)] opacity-80" />
         
-        {/* Dynamic Lens Flare (Static) */}
         <div className="absolute top-1/4 left-1/4 w-[40vw] h-[40vw] bg-orange-500/5 rounded-full blur-[100px]" />
         <div className="absolute bottom-1/4 right-1/4 w-[30vw] h-[30vw] bg-orange-400/5 rounded-full blur-[80px]" />
       </div>
 
-      {/* Floating Dust Particles */}
       <div className="absolute inset-0 pointer-events-none opacity-30">
         {[...Array(15)].map((_, i) => (
           <div 

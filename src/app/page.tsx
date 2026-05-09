@@ -25,20 +25,21 @@ export default function Home() {
       <SmoothScroll />
       <Navbar />
 
-      {/* Hero Section with Scroll Sequence */}
-      <section ref={heroRef} className="relative h-[500vh]">
+      {/* Hero Section with Auto-play Sequence */}
+      <section ref={heroRef} className="relative h-screen">
         <ScrollSequence flavor="Apelsin" frameCount={121} containerRef={heroRef} />
         
         {/* Floating Content Overlay */}
         <motion.div 
-          style={{ opacity }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 2.5 }}
           className="fixed inset-0 flex flex-col items-center justify-center pointer-events-none z-10 px-6"
         >
           <motion.h1 
-            style={{ y: textY }}
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.5, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 1.5, delay: 3, ease: [0.16, 1, 0.3, 1] }}
             className="text-center"
           >
             <span className="block text-[10px] md:text-xs font-bold tracking-[0.5em] text-orange-500 uppercase mb-4">
