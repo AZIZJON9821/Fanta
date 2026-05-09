@@ -126,8 +126,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     });
 
     const handleResize = () => {
-      // Use full DPR for maximum sharpness
-      const dpr = window.devicePixelRatio || 1;
+      // SUPER-SAMPLING: Increase internal resolution for extreme sharpness
+      const dpr = (window.devicePixelRatio || 1) * 1.25; // 25% extra resolution for sub-pixel clarity
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       render();
@@ -153,11 +153,15 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
           height: "100%", 
           objectFit: "cover", 
           opacity: isReady ? 1 : 0,
-          imageRendering: "auto", // Better for photos than 'pixelated'
-          filter: "contrast(1.05) brightness(1.02)", // Subtle pop for "HDR" feel
+          imageRendering: "auto",
+          // ADVANCED POST-PROCESSING
+          filter: "contrast(1.08) brightness(1.05) saturate(1.15) drop-shadow(0 0 0 black)", 
         }}
         className="will-change-transform transition-opacity duration-500"
       />
+      
+      {/* Super-Fine Grain Overlay to hide banding and add texture */}
+      <div className="absolute inset-0 pointer-events-none opacity-[0.04] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
       
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
