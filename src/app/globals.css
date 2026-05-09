@@ -29,6 +29,10 @@
     @apply bg-white/[0.02] backdrop-blur-xl border border-white/[0.05];
   }
   
+  .perspective-2000 {
+    perspective: 2000px;
+  }
+
   .text-glow {
     text-shadow: 0 0 20px rgba(255, 140, 0, 0.5);
   }
