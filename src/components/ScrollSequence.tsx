@@ -14,7 +14,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isReady, setIsReady] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState(0);
   
   const imagesRef = useRef<HTMLImageElement[]>([]);
   const stateRef = useRef({ 
@@ -25,7 +24,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   // Preload images - Triggers on flavor change
   useEffect(() => {
     setIsReady(false);
-    setLoadingProgress(0);
     imagesRef.current = [];
     stateRef.current.frame = 0;
 
@@ -41,8 +39,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         img.onload = () => {
           loadedCount++;
           images[i] = img;
-          setLoadingProgress(Math.floor((loadedCount / frameCount) * 100));
-          
           if (loadedCount === frameCount) {
             imagesRef.current = images;
             setIsReady(true);
@@ -122,23 +118,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
         className="will-change-transform"
       />
-      
-      {!isReady && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-50">
-          <div className="mb-6 text-orange-500 text-[10px] font-black tracking-[0.8em] uppercase opacity-50">
-            Quantum Initialization
-          </div>
-          <div className="w-64 h-[2px] bg-white/5 relative overflow-hidden">
-            <div 
-              className="absolute left-0 top-0 h-full bg-gradient-to-r from-orange-600 to-orange-400 shadow-[0_0_20px_rgba(249,115,22,0.5)] transition-all duration-300"
-              style={{ width: `${loadingProgress}%` }}
-            />
-          </div>
-          <div className="mt-4 font-mono text-[9px] text-white/20 uppercase tracking-widest">
-            Syncing data: {loadingProgress}%
-          </div>
-        </div>
-      )}
       
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
