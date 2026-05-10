@@ -7,7 +7,7 @@ interface ScrollSequenceProps {
   flavor: string;
   frameCount: number;
   onAutoNext?: () => void;
-  mode?: "full" | "wiggle"; // New prop to control behavior
+  mode?: "full" | "wiggle";
 }
 
 const flavorCache: Record<string, HTMLImageElement[]> = {};
@@ -29,7 +29,11 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   });
 
   useEffect(() => {
-    const particles = [...Array(mode === "wiggle" ? 5 : 15)].map((_, i) => ({
+    // Fewer particles on mobile for performance
+    const isMobile = window.innerWidth < 768;
+    const count = isMobile ? (mode === "wiggle" ? 3 : 8) : (mode === "wiggle" ? 5 : 15);
+    
+    const particles = [...Array(count)].map((_, i) => ({
       id: i,
       width: Math.random() * 2 + 1,
       height: Math.random() * 2 + 1,
@@ -45,6 +49,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
   useEffect(() => {
     const preloadAll = async () => {
+      const isMobile = window.innerWidth < 768;
+      
       for (const f of flavorsList) {
         if (flavorCache[f]) continue;
         
@@ -53,7 +59,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
           return new Promise((resolve) => {
             const img = new Image();
             const frameNumber = (i + 1).toString().padStart(3, "0");
-            const flavorPath = f.replace(/ /g, ""); // Remove spaces for paths
             img.src = `/images/${f.replace(" & ", "&").replace(" ", "")}/ezgif-frame-${frameNumber}.jpg`;
             img.onload = () => {
               images[i] = img;
@@ -64,14 +69,20 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         });
 
         if (f === flavor) {
-          await Promise.all(loadPromises.slice(0, 20));
+          // Priority load first 30 frames for immediate start
+          await Promise.all(loadPromises.slice(0, 30));
           flavorCache[f] = images;
           setIsReady(true);
         }
         
-        Promise.all(loadPromises).then(() => {
-          flavorCache[f] = images;
-        });
+        // On mobile, we might want to delay other flavors to save memory
+        if (isMobile && f !== flavor) {
+          setTimeout(() => {
+            Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
+          }, 2000);
+        } else {
+          Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
+        }
       }
     };
 
@@ -113,7 +124,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
       if (img && canvas) {
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
+        ctx.imageSmoothingQuality = window.innerWidth < 768 ? "medium" : "high";
         
         const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
         const x = (canvas.width - img.width * scale) / 2;
@@ -132,8 +143,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         onComplete: () => {
           gsap.to(stateRef.current, {
             frame: frameCount - 15,
-            duration: 1.2,
-            repeat: 4, 
+            duration: 1.5,
+            repeat: 3, 
             yoyo: true,
             ease: "sine.inOut",
             onUpdate: render,
@@ -144,10 +155,9 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         }
       });
     } else {
-      // mode === "wiggle" - Infinite wiggle on last frames
       gsap.to(stateRef.current, {
         frame: frameCount - 20,
-        duration: 2,
+        duration: 2.5,
         repeat: -1,
         yoyo: true,
         ease: "sine.inOut",
@@ -157,7 +167,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
     const idleAnimation = gsap.to(stateRef.current, {
       idle: 0.8,
-      duration: 2.5,
+      duration: 3,
       repeat: -1,
       yoyo: true,
       ease: "sine.inOut",
@@ -165,7 +175,10 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     });
 
     const handleResize = () => {
-      const dpr = (window.devicePixelRatio || 1) * 1.25;
+      // MOBILE OPTIMIZATION: Cap DPR to 1.5 or 2.0 to avoid GPU lag
+      const isMobile = window.innerWidth < 768;
+      const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : (window.devicePixelRatio || 1) * 1.25;
+      
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       render();
