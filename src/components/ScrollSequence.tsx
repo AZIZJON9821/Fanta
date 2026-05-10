@@ -60,7 +60,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     if (!mounted) return;
     
     let active = true;
-    const preload = async (f: string, priority: boolean = false) => {
+    const preload = async (f: string) => {
       if (GLOBAL_CACHE.has(f)) {
         if (f === flavor && active) setIsReady(true);
         return;
@@ -89,7 +89,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       };
 
       if (f === flavor) {
-        await loadChunk(0, 30); // Immediate priority chunk
+        // Load first 50 frames to ensure no flashing at start
+        await loadChunk(0, 50);
         if (active) {
           GLOBAL_CACHE.set(f, images);
           setIsReady(true);
@@ -97,7 +98,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       }
 
       const burstSize = 15;
-      for (let i = (f === flavor ? 30 : 0); i < frameCount; i += burstSize) {
+      for (let i = (f === flavor ? 50 : 0); i < frameCount; i += burstSize) {
         if (!active || stateRef.current.isDestroyed) break;
         await loadChunk(i, Math.min(i + burstSize, frameCount));
         await new Promise(r => requestAnimationFrame(r));
@@ -107,17 +108,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       GLOBAL_LOADING.set(f, false);
     };
 
-    const start = async () => {
-      await preload(flavor, true);
-      for (const f of flavorsList) {
-        if (f !== flavor && active) {
-          await new Promise(r => setTimeout(r, 1500));
-          await preload(f, false);
-        }
-      }
-    };
-
-    start();
+    preload(flavor);
     return () => { active = false; };
   }, [flavor, frameCount, mounted]);
 
@@ -131,15 +122,29 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     const draw = () => {
       if (!isVisible || stateRef.current.isDestroyed) return;
       const images = GLOBAL_CACHE.get(flavor);
-      if (!images) return;
+      if (!images || images.length === 0) return;
 
       const raw = stateRef.current.frame + stateRef.current.idle;
-      const idx = Math.round(Math.max(0, Math.min(frameCount - 1, raw)));
+      // SENIOR PRO FIX: Strict boundary and fallback to avoid flashing
+      let idx = Math.round(raw);
+      idx = Math.max(0, Math.min(frameCount - 1, idx));
+      
       if (idx === stateRef.current.lastFrame) return;
 
-      const img = images[idx];
+      // Ensure the specific image exists before drawing to prevent white/black flickers
+      let img = images[idx];
+      
+      // Fallback logic: if current frame is missing, try nearest loaded frame
+      if (!img) {
+        for (let offset = 1; offset < 10; offset++) {
+          if (images[idx - offset]) { img = images[idx - offset]; break; }
+          if (images[idx + offset]) { img = images[idx + offset]; break; }
+        }
+      }
+
       if (img && img.complete) {
         const { scale, offsetX, offsetY } = stateRef.current;
+        // Don't clear rect, just draw over to keep it smooth
         ctx.drawImage(img, offsetX, offsetY, img.width * scale, img.height * scale);
         stateRef.current.lastFrame = idx;
       }
@@ -160,9 +165,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         yoyo: true,
         ease: "sine.inOut",
         onUpdate: draw,
-        onComplete: () => {
-          if (onAutoNext) onAutoNext();
-        }
+        onComplete: () => onAutoNext?.()
       }, "-=0.1");
     } else {
       gsap.to(stateRef.current, {
@@ -211,19 +214,18 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     };
   }, [isReady, flavor, frameCount, mode, isVisible, onAutoNext]);
 
+  if (!mounted) return <div className="h-full w-full bg-black" />;
+
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-black">
       <canvas
         ref={canvasRef}
-        className="w-full h-full object-cover transition-opacity duration-1000"
+        className="w-full h-full object-cover transition-opacity duration-700"
         style={{ 
           opacity: isReady ? 1 : 0,
           imageRendering: "auto"
         }}
       />
-      {mode === "full" && (
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
-      )}
     </div>
   );
 };
