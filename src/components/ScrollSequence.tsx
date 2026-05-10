@@ -11,7 +11,17 @@ interface ScrollSequenceProps {
 }
 
 const flavorCache: Record<string, HTMLImageElement[]> = {};
-const flavorsList = ["Apelsin", "Marakuya", "Qulupnay", "Chernika & Malina", "Siyohrang Chernika"];
+
+// EXACT folder names from the filesystem
+const FLAVOR_MAP: Record<string, string> = {
+  "Apelsin": "Apelsin",
+  "Marakuya": "Marakuya",
+  "Qulupnay": "Qulupnay",
+  "Chernika & Malina": "Chernika&Malina",
+  "Siyohrang Chernika": "SiyohrangCHernika"
+};
+
+const flavorsList = Object.keys(FLAVOR_MAP);
 
 export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   flavor,
@@ -51,22 +61,26 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       for (const f of flavorsList) {
         if (flavorCache[f]) continue;
         const images: HTMLImageElement[] = [];
+        const folderName = FLAVOR_MAP[f];
+        
         const loadPromises = Array.from({ length: frameCount }).map((_, i) => {
           return new Promise((resolve) => {
             const img = new Image();
             const frameNumber = (i + 1).toString().padStart(3, "0");
-            img.src = `/images/${f.replace(" & ", "&").replace(" ", "")}/ezgif-frame-${frameNumber}.jpg`;
+            img.src = `/images/${folderName}/ezgif-frame-${frameNumber}.jpg`;
             img.onload = () => { images[i] = img; resolve(img); };
             img.onerror = resolve;
           });
         });
+
         if (f === flavor) {
-          await Promise.all(loadPromises.slice(0, 30));
+          await Promise.all(loadPromises.slice(0, 40));
           flavorCache[f] = images;
           setIsReady(true);
         }
+        
         if (isMobile && f !== flavor) {
-          setTimeout(() => { Promise.all(loadPromises).then(() => { flavorCache[f] = images; }); }, 2000);
+          setTimeout(() => { Promise.all(loadPromises).then(() => { flavorCache[f] = images; }); }, 3000);
         } else {
           Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
         }
@@ -118,27 +132,27 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     const mainTimeline = gsap.timeline();
 
     if (mode === "full") {
-      // ULTRA-SEAMLESS TRANSITION
-      // 1. Intro with strong power3 ease but ending slightly early to merge with wiggle
+      // THE ULTIMATE SEAMLESS FLOW
+      // 1. Faster intro with a slight bounce-back feel at the end
       mainTimeline.to(stateRef.current, {
         frame: frameCount - 1,
-        duration: 2.8, // Slightly faster
-        ease: "power3.out",
+        duration: 2.5,
+        ease: "power2.out",
         onUpdate: render,
       });
 
-      // 2. Wiggle - Start IMMEDIATELY with no ease-in to maintain momentum
+      // 2. Immediate wiggle with overlapping to ensure zero pause
       mainTimeline.to(stateRef.current, {
-        frame: frameCount - 15,
-        duration: 1.0,
-        repeat: 3,
+        frame: frameCount - 18,
+        duration: 0.8, // Faster first wiggle for momentum
+        repeat: 5,
         yoyo: true,
         ease: "sine.inOut",
         onUpdate: render,
         onComplete: () => {
           if (onAutoNext) onAutoNext();
         }
-      }, "-=0.1"); // OVERLAP by 100ms to eliminate any possible pause
+      }, "-=0.2"); // 200ms overlap to keep the can moving
     } else {
       gsap.to(stateRef.current, {
         frame: frameCount - 20,
@@ -151,8 +165,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     }
 
     const idleAnimation = gsap.to(stateRef.current, {
-      idle: 0.8,
-      duration: 3,
+      idle: 1.2,
+      duration: 2,
       repeat: -1,
       yoyo: true,
       ease: "sine.inOut",
@@ -161,7 +175,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
     const handleResize = () => {
       const isMobile = window.innerWidth < 768;
-      const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : (window.devicePixelRatio || 1) * 1.25;
+      const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : Math.min(window.devicePixelRatio || 1, 2.5);
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       render();
