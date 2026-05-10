@@ -76,6 +76,28 @@ const Magnetic = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+// ─── Slide Variants ───────────────────────────────────────────────────────────
+const slideVariants = {
+  enterFromRight: {
+    x: "100%", rotateY: 40, opacity: 0, scale: 0.85,
+  },
+  enterFromLeft: {
+    x: "-100%", rotateY: -40, opacity: 0, scale: 0.85,
+  },
+  center: {
+    x: 0, rotateY: 0, opacity: 1, scale: 1,
+    transition: { duration: 1.0, ease: "easeOut" as const },
+  },
+  exitToLeft: {
+    x: "-100%", rotateY: -40, opacity: 0, scale: 0.85,
+    transition: { duration: 1.0, ease: "easeIn" as const },
+  },
+  exitToRight: {
+    x: "100%", rotateY: 40, opacity: 0, scale: 0.85,
+    transition: { duration: 1.0, ease: "easeIn" as const },
+  },
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function Home() {
   const [idx, setIdx] = useState(0);
@@ -128,27 +150,10 @@ export default function Home() {
               key={current.name}
               className="absolute inset-0"
               style={{ transformStyle: "preserve-3d" }}
-              custom={dir}
-              initial={(d) => ({
-                x: d > 0 ? "100%" : "-100%",
-                rotateY: d > 0 ? 40 : -40,
-                opacity: 0,
-                scale: 0.85,
-              })}
-              animate={{
-                x: 0,
-                rotateY: 0,
-                opacity: 1,
-                scale: 1,
-                transition: { duration: 1.0, ease: [0.25, 0.46, 0.45, 0.94] },
-              }}
-              exit={(d) => ({
-                x: d > 0 ? "-100%" : "100%",
-                rotateY: d > 0 ? -40 : 40,
-                opacity: 0,
-                scale: 0.85,
-                transition: { duration: 1.0, ease: [0.25, 0.46, 0.45, 0.94] },
-              })}
+              variants={slideVariants}
+              initial={dir > 0 ? "enterFromRight" : "enterFromLeft"}
+              animate="center"
+              exit={dir > 0 ? "exitToLeft" : "exitToRight"}
             >
               <SequencePlayer
                 key={current.folder}
