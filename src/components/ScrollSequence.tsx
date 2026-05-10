@@ -10,7 +10,9 @@ interface ScrollSequenceProps {
   mode?: "full" | "wiggle";
 }
 
+// Global cache with limited size to prevent memory pressure stutters
 const flavorCache: Record<string, HTMLImageElement[]> = {};
+const loadingQueue: string[] = [];
 
 const FLAVOR_MAP: Record<string, string> = {
   "Apelsin": "Apelsin",
@@ -29,58 +31,49 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   mode = "full",
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
-  const [dustParticles, setDustParticles] = useState<any[]>([]);
+  const [isVisible, setIsVisible] = useState(true);
   
   const stateRef = useRef({ 
     frame: mode === "wiggle" ? frameCount - 1 : 0,
     idle: 0 
   });
 
-  // 1. Initialize particles after mount
+  // 1. Intersection Observer to stop rendering when off-screen
   useEffect(() => {
-    const isMobile = window.innerWidth < 768;
-    const count = isMobile ? (mode === "wiggle" ? 3 : 8) : (mode === "wiggle" ? 5 : 15);
-    const particles = [...Array(count)].map((_, i) => ({
-      id: i,
-      width: Math.random() * 2 + 1,
-      height: Math.random() * 2 + 1,
-      left: Math.random() * 100,
-      top: Math.random() * 100,
-      opacity: Math.random() * 0.5,
-      duration: Math.random() * 20 + 20,
-      delay: Math.random() * 10,
-      moveX: Math.random() * 100 - 50,
-    }));
-    setDustParticles(particles);
-  }, [mode]);
+    if (!containerRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { threshold: 0.01 }
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
-  // 2. ULTRA-OPTIMIZED SEQUENTIAL PRELOADER
+  // 2. Optimized Sequential Loading with memory safety
   useEffect(() => {
     let isMounted = true;
 
     const preloadFlavor = async (f: string, highPriority: boolean = false) => {
       if (flavorCache[f]) return;
+      if (loadingQueue.includes(f) && !highPriority) return;
+      loadingQueue.push(f);
 
       const images: HTMLImageElement[] = [];
       const folderName = FLAVOR_MAP[f];
-      
-      // Load in chunks to avoid blocking the CPU
-      const chunkSize = highPriority ? 20 : 10;
-      const totalFrames = frameCount;
+      const chunkSize = highPriority ? 15 : 5; // Smaller chunks to keep main thread free
 
-      for (let i = 0; i < totalFrames; i += chunkSize) {
-        if (!isMounted) return;
+      for (let i = 0; i < frameCount; i += chunkSize) {
+        if (!isMounted) break;
 
-        const chunkPromises = Array.from({ length: Math.min(chunkSize, totalFrames - i) }).map((_, j) => {
+        const promises = Array.from({ length: Math.min(chunkSize, frameCount - i) }).map((_, j) => {
           const index = i + j;
           return new Promise((resolve) => {
             const img = new Image();
-            const frameNumber = (index + 1).toString().padStart(3, "0");
-            img.src = `/images/${folderName}/ezgif-frame-${frameNumber}.jpg`;
+            img.src = `/images/${folderName}/ezgif-frame-${(index + 1).toString().padStart(3, "0")}.jpg`;
             img.onload = () => {
               images[index] = img;
-              // Decode high priority images immediately to avoid stutter during first frame
               if (highPriority && "decode" in img) {
                 (img as any).decode().then(resolve).catch(resolve);
               } else {
@@ -91,73 +84,63 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
           });
         });
 
-        await Promise.all(chunkPromises);
+        await Promise.all(promises);
         
-        // After first 30 frames of CURRENT flavor, set ready
+        // Quick release to keep UI responsive
+        if (i % 30 === 0) await new Promise(r => requestAnimationFrame(r));
+        
         if (f === flavor && i >= 20 && !isReady) {
           flavorCache[f] = images;
           setIsReady(true);
         }
-
-        // Small break to allow main thread to breathe
-        await new Promise(r => setTimeout(r, 10));
       }
       
       flavorCache[f] = images;
+      const qIdx = loadingQueue.indexOf(f);
+      if (qIdx > -1) loadingQueue.splice(qIdx, 1);
+
+      // Memory Cleanup: Keep only 3 flavors in cache to prevent RAM stutters
+      const cachedFlavors = Object.keys(flavorCache);
+      if (cachedFlavors.length > 3) {
+        const toDelete = cachedFlavors.find(cf => cf !== flavor && !loadingQueue.includes(cf));
+        if (toDelete) delete flavorCache[toDelete];
+      }
     };
 
-    const startPreloading = async () => {
-      // Step 1: High Priority - Load Current Flavor
+    const startLoading = async () => {
       await preloadFlavor(flavor, true);
-      
-      // Step 2: Low Priority - Load Other Flavors one by one
+      // Wait for intro to finish before loading background flavors
+      await new Promise(r => setTimeout(r, 4000));
       for (const f of flavorsList) {
-        if (f !== flavor) {
-          await new Promise(r => setTimeout(r, 1000)); // Wait before next flavor
+        if (f !== flavor && isMounted) {
           await preloadFlavor(f, false);
+          await new Promise(r => setTimeout(r, 2000)); // Large gap to prevent CPU spikes
         }
       }
     };
 
-    startPreloading();
+    startLoading();
     return () => { isMounted = false; };
-  }, [frameCount, flavor]);
+  }, [flavor, frameCount]);
 
-  // 3. Handle Switch Transition
+  // 3. Animation and Canvas Logic
   useEffect(() => {
-    if (flavorCache[flavor]) {
-      gsap.to(canvasRef.current, {
-        opacity: 0,
-        duration: 0.3,
-        onComplete: () => {
-          gsap.killTweensOf(stateRef.current);
-          stateRef.current.frame = mode === "wiggle" ? frameCount - 1 : 0;
-          setIsReady(true);
-          gsap.to(canvasRef.current, { opacity: 1, duration: 0.5 });
-        }
-      });
-    } else {
-      setIsReady(false);
-    }
-  }, [flavor, mode, frameCount]);
-
-  // 4. Animation Logic
-  useEffect(() => {
-    if (!isReady || !canvasRef.current || !flavorCache[flavor]) return;
+    if (!isReady || !canvasRef.current || !flavorCache[flavor] || !isVisible) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
 
     const render = () => {
+      if (!isVisible) return;
+      const images = flavorCache[flavor];
+      if (!images) return;
+
       const currentFrame = Math.round(stateRef.current.frame + stateRef.current.idle);
       const safeFrame = Math.max(0, Math.min(frameCount - 1, currentFrame));
-      const images = flavorCache[flavor];
-      const img = images ? images[safeFrame] : null;
+      const img = images[safeFrame];
 
-      if (img && canvas) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = window.innerWidth < 768 ? "medium" : "high";
+      if (img) {
         const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
         const x = (canvas.width - img.width * scale) / 2;
         const y = (canvas.height - img.height * scale) / 2;
@@ -165,27 +148,25 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       }
     };
 
-    const mainTimeline = gsap.timeline();
+    const tl = gsap.timeline({ defaults: { force3D: true } });
 
     if (mode === "full") {
-      mainTimeline.to(stateRef.current, {
+      tl.to(stateRef.current, {
         frame: frameCount - 1,
         duration: 3,
         ease: "power2.out",
         onUpdate: render,
       });
 
-      mainTimeline.to(stateRef.current, {
+      tl.to(stateRef.current, {
         frame: frameCount - 18,
-        duration: 1.0,
-        repeat: 5,
+        duration: 1.2,
+        repeat: 3,
         yoyo: true,
         ease: "sine.inOut",
         onUpdate: render,
-        onComplete: () => {
-          if (onAutoNext) onAutoNext();
-        }
-      }, "-=0.2");
+        onComplete: () => onAutoNext?.()
+      }, "-=0.1");
     } else {
       gsap.to(stateRef.current, {
         frame: frameCount - 20,
@@ -197,9 +178,9 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       });
     }
 
-    const idleAnimation = gsap.to(stateRef.current, {
+    gsap.to(stateRef.current, {
       idle: 1.2,
-      duration: 2.5,
+      duration: 3,
       repeat: -1,
       yoyo: true,
       ease: "sine.inOut",
@@ -208,7 +189,10 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
     const handleResize = () => {
       const isMobile = window.innerWidth < 768;
-      const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : Math.min(window.devicePixelRatio || 1, 2.5);
+      // PERFORMANCE: Reduced DPR for wiggle mode and mobile to ensure 60fps
+      const maxDpr = mode === "wiggle" ? 1 : 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+      
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       render();
@@ -216,70 +200,40 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
     window.addEventListener("resize", handleResize);
     handleResize();
-    render();
+
+    // Use GSAP Ticker for smoother rendering sync
+    gsap.ticker.add(render);
 
     return () => {
-      mainTimeline.kill();
+      tl.kill();
+      gsap.ticker.remove(render);
       gsap.killTweensOf(stateRef.current);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isReady, flavor, frameCount, onAutoNext, mode]);
+  }, [isReady, flavor, frameCount, onAutoNext, mode, isVisible]);
 
   return (
-    <div className="sticky top-0 h-full w-full overflow-hidden bg-black">
+    <div ref={containerRef} className="sticky top-0 h-full w-full overflow-hidden bg-black">
       <canvas
         ref={canvasRef}
+        className="w-full h-full object-cover transition-opacity duration-700"
         style={{ 
-          width: "100%", 
-          height: "100%", 
-          objectFit: "cover", 
           opacity: isReady ? 1 : 0,
           imageRendering: "auto",
-          filter: mode === "wiggle" ? "contrast(1.05) saturate(1.1)" : "contrast(1.08) brightness(1.05) saturate(1.15) drop-shadow(0 0 0 black)", 
+          filter: mode === "wiggle" ? "contrast(1.02)" : "contrast(1.05) brightness(1.02)",
+          willChange: "transform"
         }}
-        className="will-change-transform transition-opacity duration-500"
       />
       
       {mode === "full" && (
-        <div className="absolute inset-0 pointer-events-none opacity-[0.04] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
+        <>
+          <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,black_100%)] opacity-80" />
+          </div>
+        </>
       )}
-      
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black opacity-60" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,black_100%)] opacity-80" />
-      </div>
-
-      <div className="absolute inset-0 pointer-events-none opacity-30">
-        {dustParticles.map((p) => (
-          <div 
-            key={p.id}
-            className="absolute bg-white rounded-full blur-[1px] animate-dust"
-            style={{
-              width: `${p.width}px`,
-              height: `${p.height}px`,
-              left: `${p.left}%`,
-              top: `${p.top}%`,
-              opacity: p.opacity,
-              animationDuration: `${p.duration}s`,
-              animationDelay: `${p.delay}s`,
-              // @ts-ignore
-              "--move-x": `${p.moveX}px`,
-            }}
-          />
-        ))}
-      </div>
-
-      <style jsx>{`
-        @keyframes dust {
-          0% { transform: translate(0, 0); opacity: 0; }
-          10% { opacity: 0.5; }
-          90% { opacity: 0.5; }
-          100% { transform: translate(var(--move-x), -100px); opacity: 0; }
-        }
-        .animate-dust {
-          animation: dust linear infinite;
-        }
-      `}</style>
     </div>
   );
 };
