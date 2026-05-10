@@ -10,8 +10,9 @@ interface ScrollSequenceProps {
   mode?: "full" | "wiggle";
 }
 
+// Global state to share images and loading status across instances
 const GLOBAL_CACHE = new Map<string, HTMLImageElement[]>();
-const LOADING_STATUS = new Map<string, boolean>();
+const GLOBAL_LOADING = new Map<string, boolean>();
 
 const FLAVOR_MAP: Record<string, string> = {
   "Apelsin": "Apelsin",
@@ -20,6 +21,8 @@ const FLAVOR_MAP: Record<string, string> = {
   "Chernika & Malina": "Chernika&Malina",
   "Siyohrang Chernika": "SiyohrangCHernika"
 };
+
+const flavorsList = Object.keys(FLAVOR_MAP);
 
 export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   flavor,
@@ -30,7 +33,9 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   
-  const [isReady, setIsReady] = useState(false);
+  // High-performance flags
+  const [isReady, setIsReady] = useState(GLOBAL_CACHE.has(flavor));
+  const [isInitialLoad, setIsInitialLoad] = useState(!GLOBAL_CACHE.has(flavor));
   const [mounted, setMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -44,6 +49,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     isDestroyed: false
   });
 
+  // 1. Mount and Visibility
   useEffect(() => {
     setMounted(true);
     const observer = new IntersectionObserver(([e]) => setIsVisible(e.isIntersecting), { threshold: 0.01 });
@@ -54,31 +60,27 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     };
   }, []);
 
+  // 2. Intelligent Sequential Preloading
   useEffect(() => {
     if (!mounted) return;
     
     let active = true;
-    const preload = async (f: string) => {
+    const preload = async (f: string, priority: boolean = false) => {
       if (GLOBAL_CACHE.has(f)) {
-        if (f === flavor && active) setIsReady(true);
+        if (f === flavor && active) {
+          setIsReady(true);
+          setIsInitialLoad(false);
+        }
         return;
       }
-      if (LOADING_STATUS.get(f)) {
-        const check = setInterval(() => {
-          if (GLOBAL_CACHE.has(f)) {
-            if (f === flavor && active) setIsReady(true);
-            clearInterval(check);
-          }
-        }, 100);
-        return;
-      }
+      if (GLOBAL_LOADING.get(f)) return;
       
-      LOADING_STATUS.set(f, true);
+      GLOBAL_LOADING.set(f, true);
       const images: HTMLImageElement[] = [];
       const folder = FLAVOR_MAP[f];
       
-      const loadFrames = async (start: number, end: number) => {
-        const promises = Array.from({ length: end - start }).map((_, j) => {
+      const loadChunk = async (start: number, end: number) => {
+        const batch = Array.from({ length: end - start }).map((_, j) => {
           const idx = start + j;
           return new Promise((resolve) => {
             const img = new Image();
@@ -91,31 +93,49 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
             img.onerror = resolve;
           });
         });
-        await Promise.all(promises);
+        await Promise.all(batch);
       };
 
+      // Priority 1: Current Flavor
       if (f === flavor) {
-        await loadFrames(0, 40);
+        await loadChunk(0, 40); // Fast start
         if (active) {
           GLOBAL_CACHE.set(f, images);
           setIsReady(true);
+          setIsInitialLoad(false);
         }
       }
 
-      for (let i = (f === flavor ? 40 : 0); i < frameCount; i += 15) {
+      // Background loading in small bursts to avoid lag
+      const burstSize = priority ? 20 : 10;
+      for (let i = (f === flavor ? 40 : 0); i < frameCount; i += burstSize) {
         if (!active || stateRef.current.isDestroyed) break;
-        await loadFrames(i, Math.min(i + 15, frameCount));
+        await loadChunk(i, Math.min(i + burstSize, frameCount));
         await new Promise(r => requestAnimationFrame(r));
       }
 
       GLOBAL_CACHE.set(f, images);
-      LOADING_STATUS.set(f, false);
+      GLOBAL_LOADING.set(f, false);
     };
 
-    preload(flavor);
+    const startLoading = async () => {
+      // Step 1: Load Current
+      await preload(flavor, true);
+      
+      // Step 2: Load Others in Background (Sequential)
+      for (const f of flavorsList) {
+        if (f !== flavor && active) {
+          await new Promise(r => setTimeout(r, 2000));
+          await preload(f, false);
+        }
+      }
+    };
+
+    startLoading();
     return () => { active = false; };
   }, [flavor, frameCount, mounted]);
 
+  // 3. Perfect Sync Render Loop
   useEffect(() => {
     if (!isReady || !canvasRef.current || !isVisible) return;
 
@@ -130,6 +150,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
       const raw = stateRef.current.frame + stateRef.current.idle;
       const idx = Math.round(Math.max(0, Math.min(frameCount - 1, raw)));
+      
       if (idx === stateRef.current.lastFrame) return;
 
       const img = images[idx];
@@ -148,13 +169,17 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         ease: "power2.out",
         onUpdate: draw
       });
+      // SEAMLESS AUTO-NEXT RESTORED
       tl.to(stateRef.current, {
-        frame: frameCount - 20,
-        duration: 1.2,
-        repeat: -1,
+        frame: frameCount - 18,
+        duration: 1.25,
+        repeat: 3,
         yoyo: true,
         ease: "sine.inOut",
-        onUpdate: draw
+        onUpdate: draw,
+        onComplete: () => {
+           if (onAutoNext) onAutoNext();
+        }
       }, "-=0.1");
     } else {
       gsap.to(stateRef.current, {
@@ -168,7 +193,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     }
 
     gsap.to(stateRef.current, {
-      idle: 1.5,
+      idle: 1.2,
       duration: 3,
       repeat: -1,
       yoyo: true,
@@ -209,26 +234,30 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       gsap.killTweensOf(stateRef.current);
       window.removeEventListener("resize", resize);
     };
-  }, [isReady, flavor, frameCount, mode, isVisible]);
+  }, [isReady, flavor, frameCount, mode, isVisible, onAutoNext]);
 
   if (!mounted) return <div className="h-full w-full bg-black" />;
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-black">
-      <div 
-        className={`absolute inset-0 z-50 flex items-center justify-center bg-black transition-opacity duration-1000 ${isReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-      >
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-[10px] font-bold tracking-[0.4em] text-white/40 uppercase">Yuklanmoqda...</span>
+      {/* INITIAL LOAD ONLY - No more loading screens between flavors! */}
+      {isInitialLoad && (
+        <div 
+          className={`absolute inset-0 z-50 flex items-center justify-center bg-black transition-opacity duration-1000 ${isReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+        >
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-[10px] font-bold tracking-[0.4em] text-white/40 uppercase">Tayyorlanmoqda...</span>
+          </div>
         </div>
-      </div>
+      )}
 
       <canvas
         ref={canvasRef}
         className="w-full h-full object-cover"
         style={{ 
           opacity: isReady ? 1 : 0,
+          transition: isInitialLoad ? "none" : "opacity 0.5s ease-in-out",
           imageRendering: "auto"
         }}
       />
