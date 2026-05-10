@@ -31,7 +31,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   useEffect(() => {
     const isMobile = window.innerWidth < 768;
     const count = isMobile ? (mode === "wiggle" ? 3 : 8) : (mode === "wiggle" ? 5 : 15);
-    
     const particles = [...Array(count)].map((_, i) => ({
       id: i,
       width: Math.random() * 2 + 1,
@@ -51,37 +50,28 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       const isMobile = window.innerWidth < 768;
       for (const f of flavorsList) {
         if (flavorCache[f]) continue;
-        
         const images: HTMLImageElement[] = [];
         const loadPromises = Array.from({ length: frameCount }).map((_, i) => {
           return new Promise((resolve) => {
             const img = new Image();
             const frameNumber = (i + 1).toString().padStart(3, "0");
             img.src = `/images/${f.replace(" & ", "&").replace(" ", "")}/ezgif-frame-${frameNumber}.jpg`;
-            img.onload = () => {
-              images[i] = img;
-              resolve(img);
-            };
+            img.onload = () => { images[i] = img; resolve(img); };
             img.onerror = resolve;
           });
         });
-
         if (f === flavor) {
           await Promise.all(loadPromises.slice(0, 30));
           flavorCache[f] = images;
           setIsReady(true);
         }
-        
         if (isMobile && f !== flavor) {
-          setTimeout(() => {
-            Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
-          }, 2000);
+          setTimeout(() => { Promise.all(loadPromises).then(() => { flavorCache[f] = images; }); }, 2000);
         } else {
           Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
         }
       }
     };
-
     preloadAll();
   }, [frameCount, flavor]);
 
@@ -106,10 +96,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     if (!isReady || !canvasRef.current || !flavorCache[flavor]) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { 
-      alpha: false,
-      desynchronized: true 
-    });
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
     if (!ctx) return;
 
     const render = () => {
@@ -121,30 +108,29 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       if (img && canvas) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = window.innerWidth < 768 ? "medium" : "high";
-        
         const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
         const x = (canvas.width - img.width * scale) / 2;
         const y = (canvas.height - img.height * scale) / 2;
-        
         ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
       }
     };
 
-    const tl = gsap.timeline();
+    const mainTimeline = gsap.timeline();
 
     if (mode === "full") {
-      // 1. INTRO ANIMATION - Use 'none' or 'power2.out' for seamless transition to wiggle
-      tl.to(stateRef.current, {
+      // ULTRA-SEAMLESS TRANSITION
+      // 1. Intro with strong power3 ease but ending slightly early to merge with wiggle
+      mainTimeline.to(stateRef.current, {
         frame: frameCount - 1,
-        duration: 3,
-        ease: "power2.out",
+        duration: 2.8, // Slightly faster
+        ease: "power3.out",
         onUpdate: render,
       });
 
-      // 2. WIGGLE ANIMATION - Starts immediately after intro with no gap
-      tl.to(stateRef.current, {
+      // 2. Wiggle - Start IMMEDIATELY with no ease-in to maintain momentum
+      mainTimeline.to(stateRef.current, {
         frame: frameCount - 15,
-        duration: 1.25,
+        duration: 1.0,
         repeat: 3,
         yoyo: true,
         ease: "sine.inOut",
@@ -152,9 +138,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         onComplete: () => {
           if (onAutoNext) onAutoNext();
         }
-      });
+      }, "-=0.1"); // OVERLAP by 100ms to eliminate any possible pause
     } else {
-      // mode === "wiggle"
       gsap.to(stateRef.current, {
         frame: frameCount - 20,
         duration: 2.5,
@@ -165,7 +150,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       });
     }
 
-    // Breathing effect always active
     const idleAnimation = gsap.to(stateRef.current, {
       idle: 0.8,
       duration: 3,
@@ -188,7 +172,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     render();
 
     return () => {
-      tl.kill();
+      mainTimeline.kill();
       gsap.killTweensOf(stateRef.current);
       window.removeEventListener("resize", handleResize);
     };
