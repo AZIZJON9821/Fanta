@@ -2,266 +2,314 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useSpring, useMotionValue } from "framer-motion";
-import { ScrollSequence } from "@/components/ScrollSequence";
+import { SequencePlayer } from "@/components/SequencePlayer";
 import { Navbar } from "@/components/Navbar";
 import { SmoothScroll } from "@/components/SmoothScroll";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+// ─── Flavor Config ─────────────────────────────────────────────────────────────
 const FLAVORS = [
-  { name: "Apelsin", count: 121, color: "text-orange-500", glow: "shadow-orange-500/20", bg: "from-orange-500/10" },
-  { name: "Marakuya", count: 121, color: "text-yellow-500", glow: "shadow-yellow-500/20", bg: "from-yellow-500/10" },
-  { name: "Qulupnay", count: 121, color: "text-red-500", glow: "shadow-red-500/20", bg: "from-red-500/10" },
-  { name: "Chernika & Malina", count: 121, color: "text-blue-500", glow: "shadow-blue-500/20", bg: "from-blue-500/10" },
-  { name: "Siyohrang Chernika", count: 121, color: "text-purple-500", glow: "shadow-purple-500/20", bg: "from-purple-500/10" },
+  {
+    name: "Apelsin",
+    folder: "/images/Apelsin",
+    frameCount: 121,
+    color: "text-orange-400",
+    accent: "#f97316",
+    bg: "from-orange-500/15",
+  },
+  {
+    name: "Marakuya",
+    folder: "/images/Marakuya",
+    frameCount: 121,
+    color: "text-yellow-400",
+    accent: "#eab308",
+    bg: "from-yellow-500/15",
+  },
+  {
+    name: "Qulupnay",
+    folder: "/images/Qulupnay",
+    frameCount: 121,
+    color: "text-red-400",
+    accent: "#ef4444",
+    bg: "from-red-500/15",
+  },
+  {
+    name: "Chernika & Malina",
+    folder: "/images/Chernika&Malina",
+    frameCount: 121,
+    color: "text-blue-400",
+    accent: "#3b82f6",
+    bg: "from-blue-500/15",
+  },
+  {
+    name: "Siyohrang Chernika",
+    folder: "/images/SiyohrangCHernika",
+    frameCount: 121,
+    color: "text-purple-400",
+    accent: "#a855f7",
+    bg: "from-purple-500/15",
+  },
 ];
 
+// ─── Magnetic Button ──────────────────────────────────────────────────────────
 const Magnetic = ({ children }: { children: React.ReactNode }) => {
   const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const springX = useSpring(x, { stiffness: 150, damping: 15 });
-  const springY = useSpring(y, { stiffness: 150, damping: 15 });
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const { clientX, clientY } = e;
-    if (!ref.current) return;
-    const { left, top, width, height } = ref.current.getBoundingClientRect();
-    x.set((clientX - (left + width / 2)) * 0.4);
-    y.set((clientY - (top + height / 2)) * 0.4);
-  };
-
-  const handleMouseLeave = () => {
-    x.set(0);
-    y.set(0);
-  };
+  const sx = useSpring(x, { stiffness: 200, damping: 20 });
+  const sy = useSpring(y, { stiffness: 200, damping: 20 });
 
   return (
     <motion.div
       ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{ x: springX, y: springY }}
+      style={{ x: sx, y: sy }}
+      onMouseMove={(e) => {
+        if (!ref.current) return;
+        const r = ref.current.getBoundingClientRect();
+        x.set((e.clientX - r.left - r.width / 2) * 0.35);
+        y.set((e.clientY - r.top - r.height / 2) * 0.35);
+      }}
+      onMouseLeave={() => { x.set(0); y.set(0); }}
     >
       {children}
     </motion.div>
   );
 };
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [flavorIndex, setFlavorIndex] = useState(0);
-  const [direction, setDirection] = useState(0); 
-  const [showProgress, setShowProgress] = useState(false);
+  const [idx, setIdx] = useState(0);
+  const [dir, setDir] = useState(1);
   const [mounted, setMounted] = useState(false);
-  const heroRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
-  const nextFlavor = () => {
-    setDirection(1);
-    setShowProgress(false);
-    setFlavorIndex((prev) => (prev + 1) % FLAVORS.length);
-  };
-  
-  const prevFlavor = () => {
-    setDirection(-1);
-    setShowProgress(false);
-    setFlavorIndex((prev) => (prev - 1 + FLAVORS.length) % FLAVORS.length);
+  const goNext = () => {
+    setDir(1);
+    setIdx(p => (p + 1) % FLAVORS.length);
   };
 
-  const currentFlavor = FLAVORS[flavorIndex];
-
-  useEffect(() => {
-    const timer = setTimeout(() => setShowProgress(true), 3000);
-    return () => clearTimeout(timer);
-  }, [flavorIndex]);
-
-  const variants: any = {
-    enter: (direction: number) => ({
-      x: direction > 0 ? "100%" : "-100%",
-      rotateY: direction > 0 ? 45 : -45,
-      rotateZ: direction > 0 ? 20 : -20,
-      opacity: 0,
-      scale: 0.8
-    }),
-    center: {
-      x: 0,
-      rotateY: 0,
-      rotateZ: 0,
-      opacity: 1,
-      scale: 1,
-      transition: { duration: 1.2, ease: "anticipate" }
-    },
-    exit: (direction: number) => ({
-      x: direction > 0 ? "-100%" : "100%",
-      rotateY: direction > 0 ? -45 : 45,
-      rotateZ: direction > 0 ? -20 : 20,
-      opacity: 0,
-      scale: 0.8,
-      transition: { duration: 1.2, ease: "anticipate" }
-    })
+  const goPrev = () => {
+    setDir(-1);
+    setIdx(p => (p - 1 + FLAVORS.length) % FLAVORS.length);
   };
 
-  if (!mounted) return <div className="bg-black min-h-screen" />;
+  const current = FLAVORS[idx];
+
+  if (!mounted) return <div className="min-h-screen bg-black" />;
 
   return (
-    <main className="relative bg-black overflow-hidden selection:bg-orange-500 selection:text-white">
+    <main className="relative bg-black overflow-x-hidden">
       <SmoothScroll />
       <Navbar />
 
-      <div className="fixed top-0 left-0 w-full h-[2px] z-[110] pointer-events-none overflow-hidden">
-         <motion.div 
-           key={currentFlavor.name + showProgress}
-           initial={{ x: "-100%" }}
-           animate={showProgress ? { x: "0%" } : { x: "-100%" }}
-           transition={{ duration: 5, ease: "linear" }}
-           className={`w-full h-full bg-gradient-to-r from-transparent via-orange-500 to-transparent opacity-80`}
-         />
-      </div>
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="relative h-screen overflow-hidden">
 
-      <section ref={heroRef} className="relative h-screen overflow-hidden perspective-2000">
+        {/* Dynamic background glow per flavor */}
         <AnimatePresence mode="wait">
-          <motion.div 
-            key={currentFlavor.name + "_bg"}
+          <motion.div
+            key={current.name + "_glow"}
+            className={`absolute inset-0 bg-gradient-to-b ${current.bg} to-transparent z-0`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 2 }}
-            className={`absolute inset-0 bg-gradient-to-b ${currentFlavor.bg} to-transparent opacity-30 z-0`}
+            transition={{ duration: 1.5 }}
           />
         </AnimatePresence>
 
-        <AnimatePresence initial={false} custom={direction} mode="popLayout">
-          <motion.div
-            key={currentFlavor.name}
-            custom={direction}
-            variants={variants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            className="absolute inset-0 z-10"
-            style={{ transformStyle: "preserve-3d" }}
-          >
-            <ScrollSequence 
-              flavor={currentFlavor.name} 
-              frameCount={currentFlavor.count} 
-              onAutoNext={nextFlavor}
-              mode="full"
-            />
-          </motion.div>
-        </AnimatePresence>
-        
-        <div className="absolute inset-0 flex items-center justify-between px-6 md:px-12 z-50 pointer-events-none">
-          <Magnetic>
-            <button 
-              onClick={prevFlavor}
-              className="p-4 md:p-6 glass rounded-full text-white pointer-events-auto hover:bg-white/10 transition-colors group relative overflow-hidden"
+        {/* ── 3D Flavor Transition ────────────────────────────────────────── */}
+        <div
+          className="absolute inset-0 z-10"
+          style={{ perspective: "2000px" }}
+        >
+          <AnimatePresence initial={false} custom={dir} mode="popLayout">
+            <motion.div
+              key={current.name}
+              className="absolute inset-0"
+              style={{ transformStyle: "preserve-3d" }}
+              custom={dir}
+              initial={(d) => ({
+                x: d > 0 ? "100%" : "-100%",
+                rotateY: d > 0 ? 40 : -40,
+                opacity: 0,
+                scale: 0.85,
+              })}
+              animate={{
+                x: 0,
+                rotateY: 0,
+                opacity: 1,
+                scale: 1,
+                transition: { duration: 1.0, ease: [0.25, 0.46, 0.45, 0.94] },
+              }}
+              exit={(d) => ({
+                x: d > 0 ? "-100%" : "100%",
+                rotateY: d > 0 ? -40 : 40,
+                opacity: 0,
+                scale: 0.85,
+                transition: { duration: 1.0, ease: [0.25, 0.46, 0.45, 0.94] },
+              })}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <ChevronLeft size={32} className="group-hover:text-orange-500 transition-colors relative z-10" />
+              <SequencePlayer
+                key={current.folder}
+                folderPath={current.folder}
+                frameCount={current.frameCount}
+                mode="cinematic"
+                onComplete={goNext}
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Vignette overlay */}
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.7)_100%)]" />
+        </div>
+
+        {/* ── Nav Buttons ──────────────────────────────────────────────────── */}
+        <div className="absolute inset-0 z-30 flex items-center justify-between px-6 md:px-12 pointer-events-none">
+          <Magnetic>
+            <button
+              onClick={goPrev}
+              className="pointer-events-auto p-4 md:p-5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md text-white hover:border-orange-500/50 hover:bg-orange-500/10 transition-all duration-300 group"
+            >
+              <ChevronLeft size={28} className="group-hover:text-orange-400 transition-colors" />
             </button>
           </Magnetic>
 
           <Magnetic>
-            <button 
-              onClick={nextFlavor}
-              className="p-4 md:p-6 glass rounded-full text-white pointer-events-auto hover:bg-white/10 transition-colors group relative overflow-hidden"
+            <button
+              onClick={goNext}
+              className="pointer-events-auto p-4 md:p-5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md text-white hover:border-orange-500/50 hover:bg-orange-500/10 transition-all duration-300 group"
             >
-              <div className="absolute inset-0 bg-gradient-to-l from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <ChevronRight size={32} className="group-hover:text-orange-500 transition-colors relative z-10" />
+              <ChevronRight size={28} className="group-hover:text-orange-400 transition-colors" />
             </button>
           </Magnetic>
         </div>
 
-        <div className="absolute bottom-12 left-12 z-40">
+        {/* ── Flavor Name ──────────────────────────────────────────────────── */}
+        <div className="absolute bottom-10 left-10 z-30">
           <AnimatePresence mode="wait">
             <motion.div
-              key={currentFlavor.name}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.5 }}
+              key={current.name}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.4 }}
             >
-              <span className="text-[10px] font-black tracking-[0.5em] text-white/30 uppercase block mb-2">Tanlangan Ta'm</span>
-              <h2 className={`text-4xl md:text-6xl font-black tracking-tighter uppercase ${currentFlavor.color}`}>
-                {currentFlavor.name}
+              <p className="text-[10px] font-bold tracking-[0.5em] text-white/30 uppercase mb-1">
+                Tanlangan Ta'm
+              </p>
+              <h2 className={`text-4xl md:text-6xl font-black tracking-tighter uppercase ${current.color}`}>
+                {current.name}
               </h2>
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* ── Flavor Dots ──────────────────────────────────────────────────── */}
+        <div className="absolute bottom-10 right-10 z-30 flex gap-2">
+          {FLAVORS.map((f, i) => (
+            <button
+              key={f.name}
+              onClick={() => { setDir(i > idx ? 1 : -1); setIdx(i); }}
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === idx ? "w-6 bg-orange-500" : "bg-white/20 hover:bg-white/50"}`}
+            />
+          ))}
+        </div>
       </section>
 
-      <section className="relative min-h-screen bg-black px-6 md:px-24 py-32 z-20">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-24 items-center">
+      {/* ── Product Section ─────────────────────────────────────────────────── */}
+      <section className="relative bg-black px-6 md:px-24 py-32">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center max-w-7xl mx-auto">
+
+          {/* Left: Text */}
           <motion.div
-            initial={{ opacity: 0, x: -50 }}
+            initial={{ opacity: 0, x: -40 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 1 }}
+            transition={{ duration: 0.9 }}
           >
-            <h2 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 uppercase">
-              ODATIY MAS, <br /> <span className="text-orange-500">MUKAMMAL.</span>
-            </h2>
-            <p className="text-lg text-white/60 leading-relaxed max-w-md mb-12">
-              Futuristik suyuqlik texnologiyasi va tabiiy meva lazzati uyg'unligini his eting. 
-              Har bir qultum - bu ta'mlar olamiga qilingan kinematografik sayohatdir.
+            <p className="text-[10px] font-bold tracking-[0.5em] text-orange-500/60 uppercase mb-6">
+              Fanta Future
             </p>
-            <div className="flex flex-wrap gap-12">
+            <h2 className="text-5xl md:text-7xl font-black tracking-tighter uppercase mb-8 leading-none">
+              ODATIY MAS,{" "}
+              <span className="text-orange-500">MUKAMMAL.</span>
+            </h2>
+            <p className="text-lg text-white/50 leading-relaxed max-w-md mb-12">
+              Futuristik suyuqlik texnologiyasi va tabiiy meva lazzati uyg'unligini his eting.
+              Har bir qultum — bu ta'mlar olamiga qilingan kinematografik sayohatdir.
+            </p>
+            <div className="flex gap-16">
               <div>
                 <div className="text-4xl font-black text-white">100%</div>
-                <div className="text-[10px] font-bold tracking-widest text-white/30 uppercase mt-2">Tabiiy Ta'm</div>
+                <div className="text-[10px] font-bold tracking-widest text-white/30 uppercase mt-2">
+                  Tabiiy Ta'm
+                </div>
               </div>
               <div>
                 <div className="text-4xl font-black text-white">∞</div>
-                <div className="text-[10px] font-bold tracking-widest text-white/30 uppercase mt-2">Energiya Quvvati</div>
+                <div className="text-[10px] font-bold tracking-widest text-white/30 uppercase mt-2">
+                  Energiya
+                </div>
               </div>
             </div>
           </motion.div>
-          
+
+          {/* Right: Live wiggle preview */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            transition={{ duration: 1 }}
-            className="aspect-square glass rounded-3xl relative overflow-hidden group border border-white/5"
+            transition={{ duration: 0.9 }}
+            className="aspect-square rounded-3xl relative overflow-hidden border border-white/5"
+            style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))" }}
           >
-             <div className="absolute inset-0 z-0">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={currentFlavor.name}
-                    initial={{ opacity: 0, scale: 1.1 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.8 }}
-                    className="w-full h-full"
-                  >
-                    <ScrollSequence 
-                      flavor={currentFlavor.name} 
-                      frameCount={currentFlavor.count} 
-                      mode="wiggle"
-                    />
-                  </motion.div>
-                </AnimatePresence>
-             </div>
-             <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent pointer-events-none" />
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={current.name + "_preview"}
+                className="absolute inset-0"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.6 }}
+              >
+                <SequencePlayer
+                  key={current.folder + "_wiggle"}
+                  folderPath={current.folder}
+                  frameCount={current.frameCount}
+                  mode="wiggle"
+                />
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Glass accent overlay */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: `radial-gradient(circle at 30% 70%, ${current.accent}15, transparent 70%)`,
+              }}
+            />
           </motion.div>
         </div>
       </section>
 
-      <footer className="bg-black py-24 px-6 md:px-24 border-t border-white/5">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-12">
-           <div className="text-4xl font-black tracking-tighter">
-             FANTA<span className="text-orange-500">.</span>
-           </div>
-           <div className="flex gap-12 text-[10px] font-black tracking-[0.2em] text-white/30 uppercase">
-             <a href="#" className="hover:text-white transition-colors">Maxfiylik</a>
-             <a href="#" className="hover:text-white transition-colors">Shartlar</a>
-             <a href="#" className="hover:text-white transition-colors">Aloqa</a>
-           </div>
-           <div className="text-[10px] font-medium text-white/20">
-             © 2026 FANTA FUTURE LTD. BARCHA HUQUQLAR HIMOYA LANGAN.
-           </div>
+      {/* ── Footer ──────────────────────────────────────────────────────────── */}
+      <footer className="bg-black border-t border-white/5 py-20 px-6 md:px-24">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-8 max-w-7xl mx-auto">
+          <div className="text-3xl font-black tracking-tighter">
+            FANTA<span className="text-orange-500">.</span>
+          </div>
+          <div className="flex gap-10 text-[10px] font-bold tracking-[0.25em] text-white/30 uppercase">
+            <a href="#" className="hover:text-white transition-colors">Maxfiylik</a>
+            <a href="#" className="hover:text-white transition-colors">Shartlar</a>
+            <a href="#" className="hover:text-white transition-colors">Aloqa</a>
+          </div>
+          <div className="text-[10px] text-white/15">
+            © 2026 FANTA FUTURE LTD. BARCHA HUQUQLAR HIMOYA LANGAN.
+          </div>
         </div>
       </footer>
     </main>
