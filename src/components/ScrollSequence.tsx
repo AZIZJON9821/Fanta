@@ -12,7 +12,6 @@ interface ScrollSequenceProps {
 
 const flavorCache: Record<string, HTMLImageElement[]> = {};
 
-// EXACT folder names from the filesystem
 const FLAVOR_MAP: Record<string, string> = {
   "Apelsin": "Apelsin",
   "Marakuya": "Marakuya",
@@ -38,6 +37,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     idle: 0 
   });
 
+  // 1. Initialize particles after mount
   useEffect(() => {
     const isMobile = window.innerWidth < 768;
     const count = isMobile ? (mode === "wiggle" ? 3 : 8) : (mode === "wiggle" ? 5 : 15);
@@ -55,40 +55,75 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     setDustParticles(particles);
   }, [mode]);
 
+  // 2. ULTRA-OPTIMIZED SEQUENTIAL PRELOADER
   useEffect(() => {
-    const preloadAll = async () => {
-      const isMobile = window.innerWidth < 768;
-      for (const f of flavorsList) {
-        if (flavorCache[f]) continue;
-        const images: HTMLImageElement[] = [];
-        const folderName = FLAVOR_MAP[f];
-        
-        const loadPromises = Array.from({ length: frameCount }).map((_, i) => {
+    let isMounted = true;
+
+    const preloadFlavor = async (f: string, highPriority: boolean = false) => {
+      if (flavorCache[f]) return;
+
+      const images: HTMLImageElement[] = [];
+      const folderName = FLAVOR_MAP[f];
+      
+      // Load in chunks to avoid blocking the CPU
+      const chunkSize = highPriority ? 20 : 10;
+      const totalFrames = frameCount;
+
+      for (let i = 0; i < totalFrames; i += chunkSize) {
+        if (!isMounted) return;
+
+        const chunkPromises = Array.from({ length: Math.min(chunkSize, totalFrames - i) }).map((_, j) => {
+          const index = i + j;
           return new Promise((resolve) => {
             const img = new Image();
-            const frameNumber = (i + 1).toString().padStart(3, "0");
+            const frameNumber = (index + 1).toString().padStart(3, "0");
             img.src = `/images/${folderName}/ezgif-frame-${frameNumber}.jpg`;
-            img.onload = () => { images[i] = img; resolve(img); };
+            img.onload = () => {
+              images[index] = img;
+              // Decode high priority images immediately to avoid stutter during first frame
+              if (highPriority && "decode" in img) {
+                (img as any).decode().then(resolve).catch(resolve);
+              } else {
+                resolve(img);
+              }
+            };
             img.onerror = resolve;
           });
         });
 
-        if (f === flavor) {
-          await Promise.all(loadPromises.slice(0, 40));
+        await Promise.all(chunkPromises);
+        
+        // After first 30 frames of CURRENT flavor, set ready
+        if (f === flavor && i >= 20 && !isReady) {
           flavorCache[f] = images;
           setIsReady(true);
         }
-        
-        if (isMobile && f !== flavor) {
-          setTimeout(() => { Promise.all(loadPromises).then(() => { flavorCache[f] = images; }); }, 3000);
-        } else {
-          Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
+
+        // Small break to allow main thread to breathe
+        await new Promise(r => setTimeout(r, 10));
+      }
+      
+      flavorCache[f] = images;
+    };
+
+    const startPreloading = async () => {
+      // Step 1: High Priority - Load Current Flavor
+      await preloadFlavor(flavor, true);
+      
+      // Step 2: Low Priority - Load Other Flavors one by one
+      for (const f of flavorsList) {
+        if (f !== flavor) {
+          await new Promise(r => setTimeout(r, 1000)); // Wait before next flavor
+          await preloadFlavor(f, false);
         }
       }
     };
-    preloadAll();
+
+    startPreloading();
+    return () => { isMounted = false; };
   }, [frameCount, flavor]);
 
+  // 3. Handle Switch Transition
   useEffect(() => {
     if (flavorCache[flavor]) {
       gsap.to(canvasRef.current, {
@@ -106,6 +141,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     }
   }, [flavor, mode, frameCount]);
 
+  // 4. Animation Logic
   useEffect(() => {
     if (!isReady || !canvasRef.current || !flavorCache[flavor]) return;
 
@@ -132,19 +168,16 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     const mainTimeline = gsap.timeline();
 
     if (mode === "full") {
-      // THE ULTIMATE SEAMLESS FLOW
-      // 1. Faster intro with a slight bounce-back feel at the end
       mainTimeline.to(stateRef.current, {
         frame: frameCount - 1,
-        duration: 2.5,
+        duration: 3,
         ease: "power2.out",
         onUpdate: render,
       });
 
-      // 2. Immediate wiggle with overlapping to ensure zero pause
       mainTimeline.to(stateRef.current, {
         frame: frameCount - 18,
-        duration: 0.8, // Faster first wiggle for momentum
+        duration: 1.0,
         repeat: 5,
         yoyo: true,
         ease: "sine.inOut",
@@ -152,11 +185,11 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         onComplete: () => {
           if (onAutoNext) onAutoNext();
         }
-      }, "-=0.2"); // 200ms overlap to keep the can moving
+      }, "-=0.2");
     } else {
       gsap.to(stateRef.current, {
         frame: frameCount - 20,
-        duration: 2.5,
+        duration: 3,
         repeat: -1,
         yoyo: true,
         ease: "sine.inOut",
@@ -166,7 +199,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
 
     const idleAnimation = gsap.to(stateRef.current, {
       idle: 1.2,
-      duration: 2,
+      duration: 2.5,
       repeat: -1,
       yoyo: true,
       ease: "sine.inOut",
