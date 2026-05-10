@@ -29,7 +29,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   });
 
   useEffect(() => {
-    // Fewer particles on mobile for performance
     const isMobile = window.innerWidth < 768;
     const count = isMobile ? (mode === "wiggle" ? 3 : 8) : (mode === "wiggle" ? 5 : 15);
     
@@ -50,7 +49,6 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   useEffect(() => {
     const preloadAll = async () => {
       const isMobile = window.innerWidth < 768;
-      
       for (const f of flavorsList) {
         if (flavorCache[f]) continue;
         
@@ -69,13 +67,11 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
         });
 
         if (f === flavor) {
-          // Priority load first 30 frames for immediate start
           await Promise.all(loadPromises.slice(0, 30));
           flavorCache[f] = images;
           setIsReady(true);
         }
         
-        // On mobile, we might want to delay other flavors to save memory
         if (isMobile && f !== flavor) {
           setTimeout(() => {
             Promise.all(loadPromises).then(() => { flavorCache[f] = images; });
@@ -134,27 +130,31 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       }
     };
 
+    const tl = gsap.timeline();
+
     if (mode === "full") {
-      const introAnimation = gsap.to(stateRef.current, {
+      // 1. INTRO ANIMATION - Use 'none' or 'power2.out' for seamless transition to wiggle
+      tl.to(stateRef.current, {
         frame: frameCount - 1,
         duration: 3,
-        ease: "power2.inOut",
+        ease: "power2.out",
+        onUpdate: render,
+      });
+
+      // 2. WIGGLE ANIMATION - Starts immediately after intro with no gap
+      tl.to(stateRef.current, {
+        frame: frameCount - 15,
+        duration: 1.25,
+        repeat: 3,
+        yoyo: true,
+        ease: "sine.inOut",
         onUpdate: render,
         onComplete: () => {
-          gsap.to(stateRef.current, {
-            frame: frameCount - 15,
-            duration: 1.5,
-            repeat: 3, 
-            yoyo: true,
-            ease: "sine.inOut",
-            onUpdate: render,
-            onComplete: () => {
-              if (onAutoNext) onAutoNext();
-            }
-          });
+          if (onAutoNext) onAutoNext();
         }
       });
     } else {
+      // mode === "wiggle"
       gsap.to(stateRef.current, {
         frame: frameCount - 20,
         duration: 2.5,
@@ -165,6 +165,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       });
     }
 
+    // Breathing effect always active
     const idleAnimation = gsap.to(stateRef.current, {
       idle: 0.8,
       duration: 3,
@@ -175,10 +176,8 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     });
 
     const handleResize = () => {
-      // MOBILE OPTIMIZATION: Cap DPR to 1.5 or 2.0 to avoid GPU lag
       const isMobile = window.innerWidth < 768;
       const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : (window.devicePixelRatio || 1) * 1.25;
-      
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       render();
@@ -189,6 +188,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     render();
 
     return () => {
+      tl.kill();
       gsap.killTweensOf(stateRef.current);
       window.removeEventListener("resize", handleResize);
     };
