@@ -10,9 +10,9 @@ interface ScrollSequenceProps {
   mode?: "full" | "wiggle";
 }
 
-// Global cache with limited size to prevent memory pressure stutters
-const flavorCache: Record<string, HTMLImageElement[]> = {};
-const loadingQueue: string[] = [];
+// SINGLETON GLOBAL CACHE - To avoid redundant memory usage and loading
+const GLOBAL_IMAGE_CACHE: Record<string, HTMLImageElement[]> = {};
+const LOADING_LOCKS: Record<string, boolean> = {};
 
 const FLAVOR_MAP: Record<string, string> = {
   "Apelsin": "Apelsin",
@@ -37,10 +37,11 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
   
   const stateRef = useRef({ 
     frame: mode === "wiggle" ? frameCount - 1 : 0,
-    idle: 0 
+    idle: 0,
+    lastRenderedFrame: -1
   });
 
-  // 1. Intersection Observer to stop rendering when off-screen
+  // 1. Intersection Observer - Kill all processing when not visible
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(
@@ -51,18 +52,19 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     return () => observer.disconnect();
   }, []);
 
-  // 2. Optimized Sequential Loading with memory safety
+  // 2. ULTRA-FAST SEQUENTIAL LOADING
   useEffect(() => {
     let isMounted = true;
 
-    const preloadFlavor = async (f: string, highPriority: boolean = false) => {
-      if (flavorCache[f]) return;
-      if (loadingQueue.includes(f) && !highPriority) return;
-      loadingQueue.push(f);
+    const preloadFlavor = async (f: string) => {
+      if (GLOBAL_IMAGE_CACHE[f] || LOADING_LOCKS[f]) return;
+      LOADING_LOCKS[f] = true;
 
       const images: HTMLImageElement[] = [];
       const folderName = FLAVOR_MAP[f];
-      const chunkSize = highPriority ? 15 : 5; // Smaller chunks to keep main thread free
+      
+      // Load in larger chunks but with hardware decode to keep it off the main thread
+      const chunkSize = f === flavor ? 20 : 5; 
 
       for (let i = 0; i < frameCount; i += chunkSize) {
         if (!isMounted) break;
@@ -74,77 +76,83 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
             img.src = `/images/${folderName}/ezgif-frame-${(index + 1).toString().padStart(3, "0")}.jpg`;
             img.onload = () => {
               images[index] = img;
-              if (highPriority && "decode" in img) {
-                (img as any).decode().then(resolve).catch(resolve);
+              if ("decode" in img) {
+                (img as any).decode().then(() => resolve(img)).catch(() => resolve(img));
               } else {
                 resolve(img);
               }
             };
-            img.onerror = resolve;
+            img.onerror = () => resolve(null);
           });
         });
 
         await Promise.all(promises);
         
-        // Quick release to keep UI responsive
-        if (i % 30 === 0) await new Promise(r => requestAnimationFrame(r));
-        
-        if (f === flavor && i >= 20 && !isReady) {
-          flavorCache[f] = images;
+        // Critical frames loaded? Start animation immediately
+        if (f === flavor && i >= 30 && !isReady) {
+          GLOBAL_IMAGE_CACHE[f] = images;
           setIsReady(true);
         }
+
+        // Give the browser a moment to breathe
+        await new Promise(r => requestAnimationFrame(r));
       }
       
-      flavorCache[f] = images;
-      const qIdx = loadingQueue.indexOf(f);
-      if (qIdx > -1) loadingQueue.splice(qIdx, 1);
-
-      // Memory Cleanup: Keep only 3 flavors in cache to prevent RAM stutters
-      const cachedFlavors = Object.keys(flavorCache);
-      if (cachedFlavors.length > 3) {
-        const toDelete = cachedFlavors.find(cf => cf !== flavor && !loadingQueue.includes(cf));
-        if (toDelete) delete flavorCache[toDelete];
-      }
+      GLOBAL_IMAGE_CACHE[f] = images;
+      delete LOADING_LOCKS[f];
     };
 
     const startLoading = async () => {
-      await preloadFlavor(flavor, true);
-      // Wait for intro to finish before loading background flavors
-      await new Promise(r => setTimeout(r, 4000));
-      for (const f of flavorsList) {
-        if (f !== flavor && isMounted) {
-          await preloadFlavor(f, false);
-          await new Promise(r => setTimeout(r, 2000)); // Large gap to prevent CPU spikes
+      // Priority 1: Current Flavor
+      await preloadFlavor(flavor);
+      
+      // Priority 2: Other Flavors (Lazy)
+      if (mode === "full") {
+        for (const f of flavorsList) {
+          if (f !== flavor && isMounted) {
+            await new Promise(r => setTimeout(r, 2000));
+            await preloadFlavor(f);
+          }
         }
       }
     };
 
     startLoading();
     return () => { isMounted = false; };
-  }, [flavor, frameCount]);
+  }, [flavor, frameCount, mode]);
 
-  // 3. Animation and Canvas Logic
+  // 3. Canvas & Animation Logic - Optimized for 60fps
   useEffect(() => {
-    if (!isReady || !canvasRef.current || !flavorCache[flavor] || !isVisible) return;
+    if (!isReady || !canvasRef.current || !isVisible) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = canvas.getContext("2d", { 
+      alpha: false,
+      desynchronized: true // Low latency rendering
+    });
     if (!ctx) return;
 
     const render = () => {
-      if (!isVisible) return;
-      const images = flavorCache[flavor];
+      if (!isVisible || !canvas) return;
+      
+      const images = GLOBAL_IMAGE_CACHE[flavor];
       if (!images) return;
 
       const currentFrame = Math.round(stateRef.current.frame + stateRef.current.idle);
       const safeFrame = Math.max(0, Math.min(frameCount - 1, currentFrame));
+      
+      // SKIP redundant renders to save CPU
+      if (safeFrame === stateRef.current.lastRenderedFrame) return;
+      
       const img = images[safeFrame];
-
-      if (img) {
+      if (img && img.complete) {
+        // PERF: Avoid complex scaling if possible
         const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
         const x = (canvas.width - img.width * scale) / 2;
         const y = (canvas.height - img.height * scale) / 2;
+        
         ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+        stateRef.current.lastRenderedFrame = safeFrame;
       }
     };
 
@@ -159,7 +167,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       });
 
       tl.to(stateRef.current, {
-        frame: frameCount - 18,
+        frame: frameCount - 20,
         duration: 1.2,
         repeat: 3,
         yoyo: true,
@@ -169,7 +177,7 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       }, "-=0.1");
     } else {
       gsap.to(stateRef.current, {
-        frame: frameCount - 20,
+        frame: frameCount - 25,
         duration: 3,
         repeat: -1,
         yoyo: true,
@@ -178,8 +186,9 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
       });
     }
 
+    // Secondary idle wiggle
     gsap.to(stateRef.current, {
-      idle: 1.2,
+      idle: 1.5,
       duration: 3,
       repeat: -1,
       yoyo: true,
@@ -188,20 +197,31 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     });
 
     const handleResize = () => {
+      // PERFORMANCE KILLER FIXED: Capping resolution at 1080p max
+      // Drawing a 4K or 5K canvas was the reason for lag.
       const isMobile = window.innerWidth < 768;
-      // PERFORMANCE: Reduced DPR for wiggle mode and mobile to ensure 60fps
-      const maxDpr = mode === "wiggle" ? 1 : 2;
-      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+      const maxRes = isMobile ? 1080 : 1920; 
       
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      let width = window.innerWidth * dpr;
+      let height = window.innerHeight * dpr;
+      
+      // Hard cap resolution to 1080p equivalent
+      if (width > maxRes) {
+        const ratio = maxRes / width;
+        width = maxRes;
+        height = height * ratio;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
       render();
     };
 
     window.addEventListener("resize", handleResize);
     handleResize();
 
-    // Use GSAP Ticker for smoother rendering sync
+    // High priority sync
     gsap.ticker.add(render);
 
     return () => {
@@ -216,12 +236,12 @@ export const ScrollSequence: React.FC<ScrollSequenceProps> = ({
     <div ref={containerRef} className="sticky top-0 h-full w-full overflow-hidden bg-black">
       <canvas
         ref={canvasRef}
-        className="w-full h-full object-cover transition-opacity duration-700"
+        className="w-full h-full object-cover transition-opacity duration-1000"
         style={{ 
           opacity: isReady ? 1 : 0,
           imageRendering: "auto",
-          filter: mode === "wiggle" ? "contrast(1.02)" : "contrast(1.05) brightness(1.02)",
-          willChange: "transform"
+          filter: mode === "wiggle" ? "contrast(1.02)" : "contrast(1.05) brightness(1.05)",
+          willChange: "contents" 
         }}
       />
       
