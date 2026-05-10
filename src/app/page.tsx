@@ -15,7 +15,6 @@ const FLAVORS = [
   { name: "Siyohrang Chernika", count: 121, color: "text-purple-500", glow: "shadow-purple-500/20", bg: "from-purple-500/10" },
 ];
 
-// Magnetic Wrapper Component
 const Magnetic = ({ children }: { children: React.ReactNode }) => {
   const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
@@ -25,11 +24,10 @@ const Magnetic = ({ children }: { children: React.ReactNode }) => {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const { clientX, clientY } = e;
-    const { left, top, width, height } = ref.current!.getBoundingClientRect();
-    const centerX = left + width / 2;
-    const centerY = top + height / 2;
-    x.set((clientX - centerX) * 0.4);
-    y.set((clientY - centerY) * 0.4);
+    if (!ref.current) return;
+    const { left, top, width, height } = ref.current.getBoundingClientRect();
+    x.set((clientX - (left + width / 2)) * 0.4);
+    y.set((clientY - (top + height / 2)) * 0.4);
   };
 
   const handleMouseLeave = () => {
@@ -53,7 +51,12 @@ export default function Home() {
   const [flavorIndex, setFlavorIndex] = useState(0);
   const [direction, setDirection] = useState(0); 
   const [showProgress, setShowProgress] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const nextFlavor = () => {
     setDirection(1);
@@ -69,7 +72,6 @@ export default function Home() {
 
   const currentFlavor = FLAVORS[flavorIndex];
 
-  // Logic to show progress bar after intro animation (approx 3s)
   useEffect(() => {
     const timer = setTimeout(() => setShowProgress(true), 3000);
     return () => clearTimeout(timer);
@@ -101,12 +103,13 @@ export default function Home() {
     })
   };
 
+  if (!mounted) return <div className="bg-black min-h-screen" />;
+
   return (
     <main className="relative bg-black overflow-hidden selection:bg-orange-500 selection:text-white">
       <SmoothScroll />
       <Navbar />
 
-      {/* Ultra-Thin Global Progress Bar (Top) */}
       <div className="fixed top-0 left-0 w-full h-[2px] z-[110] pointer-events-none overflow-hidden">
          <motion.div 
            key={currentFlavor.name + showProgress}
@@ -118,7 +121,6 @@ export default function Home() {
       </div>
 
       <section ref={heroRef} className="relative h-screen overflow-hidden perspective-2000">
-        {/* Dynamic Background Glow */}
         <AnimatePresence mode="wait">
           <motion.div 
             key={currentFlavor.name + "_bg"}
@@ -150,7 +152,6 @@ export default function Home() {
           </motion.div>
         </AnimatePresence>
         
-        {/* Navigation Buttons with Magnetic Effect */}
         <div className="absolute inset-0 flex items-center justify-between px-6 md:px-12 z-50 pointer-events-none">
           <Magnetic>
             <button 
